@@ -28,6 +28,7 @@ Notably, it:
 - doesn't try to unpack minified webpack chunks without source maps
 - doesn't crawl html pages, it assumes the specified url points to a SPA
 - doesn't do any dynamic analysis to discover chunks
+- doesn't attempt to deobfuscate obfuscated (not just minified) JS files
 - doesn't even try to defend against any kind of targeted DoS (like infinitely many JS files and so on)
 
 ## Basic usage
@@ -38,6 +39,13 @@ In case you know that a particular url should be included but getfrontend can't 
 python getfrontend.py [options]... [root url] [optional additional urls]...
 ```
 Note that only the first url is treated as the "root" url.. practically this means multi-page apps are supported only for the same origin
+
+### Need custom headers? Cookies?
+You can specify a custom header to be added to each request using the `--add-header`/`-H` option (works similarly to `curl`).
+Additionally there's the `--add-cookie`/`-c` convenience argument to add a cookie. Both options might be used multiple times.
+```
+python getfrontend.py -H'X-Is-Admin: of-course' -c'is_admin=sure' -c'is_a_bot=nope' https://securesite.com/
+```
 
 ### Choose the output method
 By default everything is **dumped to stdout**.. since this might not necessarily be what you want, you can specify the `--output`/`-o` argument:
