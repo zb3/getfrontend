@@ -240,8 +240,14 @@ class Crawler:
         return self.gf.save_asset(self.save_prefix + path, content)
 
     def save_mapped_asset(self, path, content, origin_path):
+        return self.save_generated_asset(path, content, origin_path, 'mapped')
+
+    def save_unpacked_asset(self, path, content, origin_path):
+        return self.save_generated_asset(path, content, origin_path, 'unpacked')
+
+    def save_generated_asset(self, path, content, origin_path, label):
         origin = re.search(r'https?://([^/]+)', origin_path).group(1)
-        self.gf.save_asset(f'{self.save_prefix}mapped@{origin}/{path}', content)
+        self.gf.save_asset(f'{self.save_prefix}{label}@{origin}/{path}', content)
 
     def queue(self, link, tag, *args):
         self.gf.fetcher.queue(link, self, tag, *args)
@@ -309,6 +315,7 @@ class Crawler:
         self.find_federated_modules(content, path)
         self.find_webpack_chunk_refs(content, path)
         self.find_vite_chunks(content, path)
+        self.unpack_webpack_eval_sources(content, path)
 
         if not skip_sourcemaps:
             self.handle_content_sourcemaps(content, path)
@@ -461,6 +468,42 @@ class Crawler:
 
         return ok
 
+    def _prepare_mapped_asset(self, name, content, real_dir=None):
+        if name.startswith('webpack://'):
+            name = name[len('webpack://'):]
+
+        # not sure if we could normalize the name..
+        name = re.sub(r'(\/|^)\.(?=\/|$)', r'', name)
+        name = re.sub(r'(\/|^)\.\.(?=\/|$)', '\1_', name)
+
+        if name.startswith('/'):
+            name = name[1:]
+
+        if '/' not in name and real_dir:
+            log.debug('using real_dir prefix', real_dir)
+            name = real_dir + '/' + name
+
+        name = re.sub(r'//+', r'/', name)
+
+        if '?' in name:
+            left, right = name.split('?', 1)
+
+            if '/' in right or '?' in right:
+                log.debug('unusual name', name)
+
+            right = '_' + re.sub(r'[^a-zA-Z0-9_.-]', '_', right)
+
+            base_name, ext = os.path.splitext(left)
+
+            name = base_name + right + ext
+        else:
+            base_name, ext = os.path.splitext(name)
+
+        # content processing, for example unpack angular .html
+        content = self.process_src_asset(name, ext, content)
+
+        return name, content
+
     def handle_srcmap_data(self, data, origin):
         real_dir = None
 
@@ -497,38 +540,7 @@ class Crawler:
                     log.debug('skipping source map entry: name', name, 'ends with a slash, content is', content)
                     continue
 
-                if name.startswith('webpack://'):
-                    name = name[len('webpack://'):]
-
-                # not sure if we could normalize the name..
-                name = re.sub(r'(\/|^)\.(?=\/|$)', r'', name)
-                name = re.sub(r'(\/|^)\.\.(?=\/|$)', '\1_', name)
-
-                if name.startswith('/'):
-                    name = name[1:]
-
-                if '/' not in name and real_dir:
-                    log.debug('using real_dir prefix', real_dir)
-                    name = real_dir + '/' + name
-
-                name = re.sub(r'//+', r'/', name)
-
-                if '?' in name:
-                    left, right = name.split('?', 1)
-
-                    if '/' in right or '?' in right:
-                        log.debug('unusual name', name)
-
-                    right = '_' + re.sub(r'[^a-zA-Z0-9_.-]', '_', right)
-
-                    base_name, ext = os.path.splitext(left)
-
-                    name = base_name + right + ext
-                else:
-                    base_name, ext = os.path.splitext(name)
-
-                # content processing, for example unpack angular .html
-                content = self.process_src_asset(name, ext, content)
+                name, content = self._prepare_mapped_asset(name, content, real_dir=real_dir)
 
                 # nested source maps? not practically useful
                 if self.gf.extract_nested_sourcemaps:
@@ -657,6 +669,28 @@ class Crawler:
                     chunk_path = urljoin(vite_base, dep)
                     log.log('adding vite2', chunk_path)
                     self.queue_link(chunk_path)
+
+    def unpack_webpack_eval_sources(self, content, current_path):
+        for m in re.finditer(r'''[\n{]eval\s*\(\s*(?:"((?:\\.|[^"\\])+)"|'((?:\\.|[^'\\])+)')\s*\)''', content):
+            src = ''
+
+            if src := m.group(2): # transform single quotes so we can decode as json
+                src = src.replace("\\'", "'").replace('"', '\\"')
+            else:
+                src = m.group(1)
+
+            if '//# sourceURL=' not in src:
+                continue
+
+            src = json.loads('"' + src + '"')
+
+            if m := re.search(r'\n//# sourceURL=([^\n?]+)[?]?', src):
+                name = m.group(1)
+                content = src[:m.start()]
+
+                name, content = self._prepare_mapped_asset(name, content)
+                log.debug('unpacking eval asset', name, 'from', current_path)
+                self.save_unpacked_asset(name, content.encode(), current_path)
 
     def add_webpack_chunk_format(self, fmt):
         self.webpack_chunk_formats.append([fmt, set()])
