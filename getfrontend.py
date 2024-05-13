@@ -1479,8 +1479,8 @@ def get_config_from_args():
     config = {
         'root': args.url,
         'origin_whitelist': args.whitelist_origin,
-        'cookies': {k: v for val in args.add_cookie for k, v in val.split('=', 1)},
-        'headers': {k: v for val in args.add_header for k, v in val.split(': ', 1)},
+        'cookies': {k: v for val in args.add_cookie for k, v in [val.split('=', 1)]},
+        'headers': {k: v for val in args.add_header for k, v in [val.split(': ', 1)]},
         'other_urls': args.other_urls,
         'aggressive_mode': args.aggressive_mode,
         'ignore_vendor': args.ignore_vendor,
