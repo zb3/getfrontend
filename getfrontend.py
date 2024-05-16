@@ -398,15 +398,30 @@ class Crawler:
                 if self.fetch_and_handle_srcmap(link):
                     had_sourcemap = True
 
+        json_map_contents = []
+
         # iterate inline sourcemaps
         for m in re.finditer(r'sourceMappingURL=data:application/json;(?:charset=([^;]+);)?base64,([A-Za-z0-9/+]+)', content):
+            charset = m.group(1) or 'utf-8'
+            map_content = base64.b64decode(m.group(2) + '==').decode(charset)
+            json_map_contents.append(map_content)
+
+        # iterate JSON-embedded sourcemaps (example observed in css-loader)
+        if '{"version":3,"sources":[' in content and '"sourcesContent":[' in content:
+            str_pat_part = r'"(?:(?:\\.|[^"\\]+)*)"'
+            str_arr_pat_part = rf'\[(?:{str_pat_part},?)*\]'
+
+            for m in re.finditer(rf'\{"{"}"version":3,"sources":{str_arr_pat_part}(?:,{str_pat_part}:(?:{str_pat_part}|{str_arr_pat_part}))+\{"}"}', content):
+                log.debug(f'found embedded source map at {path}')
+                map_content = m.group(0)
+                json_map_contents.append(map_content)
+
+        for map_content in json_map_contents:
             try:
-                charset = m.group(1) or 'utf-8'
-                map_content = base64.b64decode(m.group(2) + '==').decode(charset)
                 data = json.loads(map_content)
                 self.handle_srcmap_data(data, path)
                 had_sourcemap = True
-            except SourceMapError as e:
+            except (json.decoder.JSONDecodeError, SourceMapError) as e:
                 log.debug(f'warn: inline sourcemap at {path} was not correct', e)
 
         return had_sourcemap
