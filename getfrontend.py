@@ -962,7 +962,6 @@ class Crawler:
                         has_css_map.add(chunk_id)
 
                 for chunk_id in has_css_map:
-                    assert chunk_id in known_ids or not depends_on_id
                     self.queue_link(resolve(chunk_id))
 
         if not has_exhaustive_chunks:
