@@ -1013,7 +1013,7 @@ class Crawler:
 
             map_found = False
 
-            for m in re.finditer(r'''var \w+\s*=\s*\{\s*((?:['"][^'"]*['"]\s*:\s*\[\s*(?:(?:['"][^'"]*['"]|\d+),?\s*)*\],?\s*)+)\}''', wr):
+            for m in re.finditer(r'''var \w+\s*=\s*\{((['"][^'"]*['"]|[\[\],\s:]|[0-9e])+)\}''', wr):
                 log.debug('async context: found map variable', m.group(1))
                 map_found = True
 
