@@ -731,25 +731,29 @@ class Crawler:
 
         res = res.replace('\\u002F', '/')
 
-        public_path = ''
+        if current_path in self.gf.public_path_map:
+            public_path = self.gf.public_path_map[current_path]
+        
+        else:
+            public_path = ''
 
-        # note for paths like someVariable + sth, we assume someVariable is empty
-        for m in re.finditer(r'''(?:\w|__webpack_require__)\.p\s*=(\s*[\w.]+\s*\+)?\s*(?P<quot>['"])(?P<path>[^'"]*)(?P=quot)\s*[,;})]''', res):
-            # we pick the last one
-            public_path = m.group('path')
+            # note for paths like someVariable + sth, we assume someVariable is empty
+            for m in re.finditer(r'''(?:\w|__webpack_require__)\.p\s*=(\s*[\w.]+\s*\+)?\s*(?P<quot>['"])(?P<path>[^'"]*)(?P=quot)\s*[,;})]''', res):
+                # we pick the last one
+                public_path = m.group('path')
 
-        if 'Automatic publicPath is not supported in this browser' in res:
-            # in one case it was relative to the script.. is it always true for automatic publicpath?
-            public_path = urljoin(current_path, 'abc')[:-3]
+            if 'Automatic publicPath is not supported in this browser' in res:
+                # in one case it was relative to the script.. is it always true for automatic publicpath?
+                public_path = urljoin(current_path, 'abc')[:-3]
 
-        # public_path is sometimes empty.. in that case it won't work with urljoin, we assume the root folder is used
-        if public_path == '':
-            public_path = urljoin(self.root, 'abc')[:-3]
+            # public_path is sometimes empty.. in that case it won't work with urljoin, we assume the root folder is used
+            if public_path == '':
+                public_path = urljoin(self.root, 'abc')[:-3]
 
-        # relative to root, not the script
-        public_path = urljoin(self.root, public_path)
+            # relative to root, not the script
+            public_path = urljoin(self.root, public_path)
 
-        log.debug('webpack public path', public_path)
+        log.debug('webpack public path for', current_path, 'is', public_path)
 
         # first we need some cleanup, clean /******/ then clean // comments
         wr = re.sub(r'/\*{3,}/', ' ', res)
@@ -1255,6 +1259,7 @@ class GetFrontend:
         self.other_urls = config.get('other_urls', [])
         self.use_original_base = config.get('use_original_base')
         self.ignore_base_tag = config.get('ignore_base_tag')
+        self.public_path_map = config.get('public_path_map')
 
         self.fetcher = Fetcher(self.client, 3)
         self.fetched_sourcemaps: dict[bool] = {} # so we don't fetch .map twice, maps are not fetched via queue
@@ -1474,6 +1479,7 @@ def get_config_from_args():
     scope_group.add_argument('-ib', '--ignore-base-tag', action='store_true', help="Ignore html <base> tags.")
     scope_group.add_argument('-c', '--add-cookie', action='append', default=[], help='Add a cookie in the form name=value to all requests.')
     scope_group.add_argument('-H', '--add-header', action='append', default=[], help='Add a given HTTP header (name: value) to all requests.')
+    scope_group.add_argument('-ppm', '--public-path-map', action='append', default=[], help='Add a custom public path for a given chunk index file (indexfile=publicpath), see "public path for" in the debug output to find out which index files were found.')
 
     scan_group = parser.add_argument_group('scan options')
     scan_group.add_argument('-a', '--aggressive-mode', action='store_true', help='Scan JS/HTML files for possible script paths more aggressively.')
@@ -1506,7 +1512,8 @@ def get_config_from_args():
         'skip_css': args.no_css,
         'other_asset_extensions': set([e for exts in args.asset_extensions for e in exts.split(',')]),
         'use_original_base': args.use_original_base,
-        'ignore_base_tag': args.ignore_base_tag
+        'ignore_base_tag': args.ignore_base_tag,
+        'public_path_map': {k: v for val in args.public_path_map for k, v in [val.split('=', 1)]},
     }
 
     if args.save_common_assets:

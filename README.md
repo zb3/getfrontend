@@ -67,6 +67,23 @@ If you want to save more, you can either specify extensions manually using the `
 | `--save-images`/`-si` | `jpg,jpeg,png,gif,webp` |
 | `--save-media`/`-sm` | `mp3,ogg,wav,m4a,opus,mp4,mov,mkv,webm` |
 
+### Scripts are being fetched from the wrong path?
+While getfrontend attempts to detect the correct "public path" for dynamically loaded chunks, this detection might sometimes yield wrong results, for example when the path is generated in an unusual way.. In that case you might want to supply the path manually.
+
+First, run getfrontend with the `-v` option, then look for strings like "public path for":
+```
+python getfrontend.py -v https://somesite.com/ |& grep 'public path for'
+```
+you might see something like this:
+```
+webpack public path for https://somesite.com/js/main.somehash.js is https://somesite.com/
+```
+then if you know (for instance by finding it out using devtools) what the actual prefix should be (like `https://somesite.com/js_chunks/`), you can use the `-ppm` option to add the mapping:
+```
+python getfrontend.py -ppm "https://somesite.com/js/main.somehash.js=https://somesite.com/js_chunks/" https://somesite.com/
+```
+and then it should work as desired :)
+
 
 ### Chunks/scripts not found?
 Try using the aforementioned "aggressive mode" by specifying the `--aggressive-mode`/`-a` option.
