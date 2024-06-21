@@ -744,6 +744,7 @@ class Crawler:
 
             if 'Automatic publicPath is not supported in this browser' in res:
                 # in one case it was relative to the script.. is it always true for automatic publicpath?
+                # EDIT: well, no... need more data
                 public_path = urljoin(current_path, 'abc')[:-3]
 
             # public_path is sometimes empty.. in that case it won't work with urljoin, we assume the root folder is used
@@ -811,8 +812,12 @@ class Crawler:
         # but... there might be no premap.. we saw this with federated modules
         premap_pat = r'''(?:\(\s*\{(?P<premap>[^{}]*)\}\s*\[(?:\s*\w+\s*=)?\s*\w+\s*\]\s*\|\|\s*\w+\s*\)|\{(?P<premap_e>[^{}]*)\}\s*\[(?:\s*\w+\s*=)?\s*\w+\s*\]|\((?:(?P<cpm_id>\d+)\s*===\s*\w+|\w+\s*===\s*(?P<cpm_id_2>\d+))\s*\?\s*"(?P<cpm_value>[^"]+)"\s*:\s*\w+\)|(?P<identity>\w+))'''
 
-        # the exhaustive map
+        # exhaustive maps
         map_pat = r'''(?:['"](?P<sep>[^"' ]*)['"]\s*\+\s*)?\{(?P<map>[^{}]*)\}\s*\[(?:\w+\s*=\s*)?\w+\]'''
+
+        qmap_pat_common = r'''\?\w+=)['"]\s*\+\s*\{(?P<qmap>[^{}]*)\}\s*\[(?:\w+\s*=\s*)?\w+\]\s*[,;]'''
+        qmap_pat = r'''['"](?P<qmap_sep>[^"' ]*\.m?jsx?''' + qmap_pat_common
+        qmap_css_pat = r'''['"](?P<qmap_sep>[^"' ]*\.css''' + qmap_pat_common
 
         suffix_pat = r'''(?:['"](?P<suffix>[^"']*\.m?jsx?)(?:\?t=\d+)?['"]\s*[^+]|(?P<void_suffix>(?<=:)void\(?\s*0\s*\)?|undefined))'''
 
@@ -844,13 +849,16 @@ class Crawler:
             else:
                 premap = None
 
-            cmap = m.group('map')
+            cmap = m.group('map') or m.group('qmap')
             if cmap:
                 cmap = parse_chunkmap(cmap)
                 known_ids.update(cmap.keys())
                 exhaustive = True
 
-            sep = m.group('sep') or ''
+            if m.group('qmap'):
+                sep = m.group('qmap_sep')
+            else:
+                sep = m.group('sep') or ''
 
             static_map = {}
             if search_static:
@@ -891,7 +899,7 @@ class Crawler:
 
         has_exhaustive_chunks = False
 
-        pattern = rf'(?:{start_v1}|{start_v2})\s*(?:{prefix_pat}\s*\+\s*)?(?:{premap_pat}\s*\+\s*)?(?:{map_pat}\s*\+\s*)?{suffix_pat}'
+        pattern = rf'(?:{start_v1}|{start_v2})\s*(?:{prefix_pat}\s*\+\s*)?(?:{premap_pat}\s*\+\s*)?(?:{qmap_pat}|(?:{map_pat}\s*\+\s*)?{suffix_pat})'
 
         last_match = None
         for m in re.finditer(pattern, wr):
@@ -921,7 +929,7 @@ class Crawler:
 
         if not self.gf.skip_css:
             suffix_css_pat = r'''['"](?P<suffix>[^"']*\.css)(?:\?t=\d+)?['"]\s*[^+]'''
-            css_pattern = rf'(?P<prelude>\.miniCssF\s*=\s*{r1v_func}(return(?![a-zA-Z0-9$_])\s*)?|(?:for\s*\(|\{"{"})\s*var \w+\s*=)\s*(?:{prefix_pat}\s*\+\s*)?(?:{premap_pat}\s*\+\s*)?(?:{map_pat}\s*\+\s*)?{suffix_css_pat}'
+            css_pattern = rf'(?P<prelude>\.miniCssF\s*=\s*{r1v_func}(return(?![a-zA-Z0-9$_])\s*)?|(?:for\s*\(|\{"{"})\s*var \w+\s*=)\s*(?:{prefix_pat}\s*\+\s*)?(?:{premap_pat}\s*\+\s*)?(?:{qmap_css_pat}|(?:{map_pat}\s*\+\s*)?{suffix_css_pat})'
 
             last_match = None
             for m in re.finditer(css_pattern, wr):
