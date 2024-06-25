@@ -798,9 +798,9 @@ class Crawler:
 
         static_path_param = r'''['"]\s*\+\s*\w+\s*\+\s*['"]'''
         static_path_inner_pat = rf'''[^'"]+(?:{static_path_param}[^'"]+)?'''
-        static_multi_ids_pat = r'''\{(?:(?:\d+(?:e\d+)|['"][^'"]+['"]):1,?)+\}\s*\[\w+\]'''
-        static_chunk_pat1 = rf'''if\s*\((?:\w+\s*===\s*(?P<static1_id>\d+(?:e\d+)|['"][^'"]+['"])|(?P<static1_ids>{static_multi_ids_pat}))\)\s*return\s*['"](?P<static1_path>{static_path_inner_pat})['"]\s*;\s*'''
-        static_chunk_pat2 = rf'''(?:(?P<static2_id>\d+(?:e\d+)|['"][^'"]+['"])===\w+|(?P<static2_ids>{static_multi_ids_pat}))\?['"](?P<static2_path>{static_path_inner_pat})['"]:'''
+        static_multi_ids_pat = r'''\{(?:(?:\d+(?:e\d+)?|['"][^'"]+['"]):1,?)+\}\s*\[\w+\]'''
+        static_chunk_pat1 = rf'''if\s*\((?:\w+\s*===\s*(?P<static1_id>\d+(?:e\d+)?|['"][^'"]+['"])|(?P<static1_ids>{static_multi_ids_pat}))\)\s*return\s*['"](?P<static1_path>{static_path_inner_pat})['"]\s*;\s*'''
+        static_chunk_pat2 = rf'''(?:(?P<static2_id>\d+(?:e\d+)?|['"][^'"]+['"])===\w+|(?P<static2_ids>{static_multi_ids_pat}))\?['"](?P<static2_path>{static_path_inner_pat})['"]:'''
 
         start_v1 = rf'(?:{r1v_func_start}(return(?![a-zA-Z0-9$_])\s*\(?\s*)?|\.src\s*=\s*(?:\([^;]{"{,5}"})?)(?:\w|__webpack_require__)\.p\s*\+'
         # return is possible in two locations depending on static_chunks variant
@@ -810,10 +810,10 @@ class Crawler:
 
         # premap can be identity or in a compact form
         # but... there might be no premap.. we saw this with federated modules
-        premap_pat = r'''(?:\(\s*\{(?P<premap>[^{}]*)\}\s*\[(?:\s*\w+\s*=)?\s*\w+\s*\]\s*\|\|\s*\w+\s*\)|\{(?P<premap_e>[^{}]*)\}\s*\[(?:\s*\w+\s*=)?\s*\w+\s*\]|\((?:(?P<cpm_id>\d+)\s*===\s*\w+|\w+\s*===\s*(?P<cpm_id_2>\d+))\s*\?\s*"(?P<cpm_value>[^"]+)"\s*:\s*\w+\)|(?P<identity>\w+))'''
+        premap_pat = r'''(?:\(\(?\s*\{(?P<premap>[^{}]*)\}\)?\s*\[(?:\s*\w+\s*=)?\s*\w+\s*\]\s*\|\|\s*\w+\s*\)|\{(?P<premap_e>[^{}]*)\}\s*\[(?:\s*\w+\s*=)?\s*\w+\s*\]|\((?:(?P<cpm_id>\d+)\s*===\s*\w+|\w+\s*===\s*(?P<cpm_id_2>\d+))\s*\?\s*"(?P<cpm_value>[^"]+)"\s*:\s*\w+\)|(?P<identity>\w+))'''
 
         # exhaustive maps
-        map_pat = r'''(?:['"](?P<sep>[^"' ]*)['"]\s*\+\s*)?\{(?P<map>[^{}]*)\}\s*\[(?:\w+\s*=\s*)?\w+\]'''
+        map_pat = r'''(?:['"](?P<sep>[^"' ]*)['"]\s*\+\s*)?\(?\{(?P<map>[^{}]*)\}\)?\s*\[(?:\w+\s*=\s*)?\w+\]'''
 
         qmap_pat_common = r'''\?\w+=)['"]\s*\+\s*\{(?P<qmap>[^{}]*)\}\s*\[(?:\w+\s*=\s*)?\w+\]\s*[,;]'''
         qmap_pat = r'''['"](?P<qmap_sep>[^"' ]*\.m?jsx?''' + qmap_pat_common
@@ -870,7 +870,7 @@ class Crawler:
                             chunk_ids.append(parse_chunk_id(single_id))
                         else:
                             ids = sm.group('static1_ids') or sm.group('static2_ids')
-                            for scm in re.finditer(r'''(\d+(?:e\d+)|['"][^'"]+['"]):1''', ids):
+                            for scm in re.finditer(r'''(\d+(?:e\d+)?|['"][^'"]+['"]):1''', ids):
                                 chunk_ids.append(parse_chunk_id(scm.group(1)))
 
                         path_src = sm.group('static1_path') or sm.group('static2_path')
@@ -942,12 +942,12 @@ class Crawler:
                 # try to find the 01 map, a subset of emap
                 if 'var ' in m.group('prelude'):
                     # in this case we match the map..  backwards
-                    if m2 := re.search(r'''(?:[;,]|\]\s*\w+\s*\[)\}\s*((?:,?1\s*:\s*(?:\d+(?:e\d+)|["'][^'"]*['"])\s*)+)\{''', wr[:m.start()][::-1]):
+                    if m2 := re.search(r'''(?:[;,]|\]\s*\w+\s*\[)\}\s*((?:,?1\s*:\s*(?:\d+(?:e\d+)?|["'][^'"]*['"])\s*)+)\{''', wr[:m.start()][::-1]):
                         has_css_map = m2.group(1)[::-1]
 
                 else:
                     # the map is inside the minicss
-                    if m2 := re.search(r'''\.miniCss\s*=\s*(?:function|\().*?\{(\s*((?:\d+(?:e\d+)|["'][^'"]*['"])\s*:\s*1,?\s*)+)\}''', wr, flags=re.DOTALL):
+                    if m2 := re.search(r'''\.miniCss\s*=\s*(?:function|\().*?\{(\s*((?:\d+(?:e\d+)?|["'][^'"]*['"])\s*:\s*1,?\s*)+)\}''', wr, flags=re.DOTALL):
                         has_css_map = m2.group(1)
 
                 if has_css_map is not None:
@@ -980,7 +980,7 @@ class Crawler:
             # these are all inside the webpack runtime, not other chunks
             # preload/prefetch maps
 
-            chunk_id_pat = r'\d+(?:e\d+)|"[^"]+"' # map keys might be strings
+            chunk_id_pat = r'\d+(?:e\d+)?|"[^"]+"' # map keys might be strings
 
             for pm in re.finditer(r'var \w+\s*=\s*\{(?P<map>[^{}]+)\};\s*(__webpack_require__|\w)\.f\.pre(?:load|fetch)\s*=', wr):
                 for pcm in re.finditer(rf'({chunk_id_pat})\s*:\s*\[([^\[\]]+)\]', pm.group('map')):
@@ -1015,7 +1015,7 @@ class Crawler:
         # search for context maps (for dynamic require support)
         # these probably aren't exhaustive
         # we simply look for all integers and strings except map keys and first items
-        chunk_id_pat = r'[{,]\s*(\d+(?:e\d+)|"[^"]+")(?!\s*:)'
+        chunk_id_pat = r'[{,]\s*(\d+(?:e\d+)?|"[^"]+")(?!\s*:)'
 
         added = False
 
@@ -1041,7 +1041,7 @@ class Crawler:
         # chunk ids can also be strings..
         # now we try to avoid false positives, so we assume no spaces inside
 
-        chunk_id_pat = r'''\d+(?:e\d+)|['"][^"'\s]+['"]'''
+        chunk_id_pat = r'''\d+(?:e\d+)?|['"][^"'\s]+['"]'''
         chunk_ref_pat = rf'(?:__webpack_require__|__nested_webpack_require_\d+__|\W\w)\.e\((?:/\*.*?\*/\s*)?({chunk_id_pat})\)'
 
         for m in re.finditer(chunk_ref_pat, wr):
