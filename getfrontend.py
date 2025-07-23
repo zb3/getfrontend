@@ -332,6 +332,7 @@ class Crawler:
             self.run_aggressive_scan(content, path)
 
     def handle_js(self, url, res):
+        res_headers = res.headers
         res = self.gf.decode_response(res)
 
         skip_sourcemaps = False
@@ -347,6 +348,9 @@ class Crawler:
         should_save = True
 
         if not skip_sourcemaps:
+            if self.handle_header_sourcemaps(res_headers, url):
+                should_save = False
+
             # it's often the case that there wasn't a comment but a sourcemap exists
             # we don't queue because we need the result here
             if self.fetch_and_handle_srcmap(url + '.map'):
@@ -372,18 +376,30 @@ class Crawler:
                 log.log('adding css url asset', link)
                 self.queue_link(link)
 
-    def handle_css(self, path, res):
+    def handle_css(self, url, res):
+        res_headers = res.headers
         res = self.gf.decode_response(res)
 
-        self.handle_css_data(res, path)
+        self.handle_css_data(res, url)
 
         should_save = True
 
-        if self.fetch_and_handle_srcmap(path + '.map'):
+        if self.handle_header_sourcemaps(res_headers, url):
+            should_save = False
+
+        if self.fetch_and_handle_srcmap(url + '.map'):
             should_save = False
 
         if should_save or self.gf.save_original_assets:
-            self.save_fetched_asset(path, res.encode())
+            self.save_fetched_asset(url, res.encode())
+
+    def handle_header_sourcemaps(self, headers, path):
+        header_map = headers.get('SourceMap') or headers.get('X-SourceMap')
+        if header_map and not self.gf.no_header_sourcemaps:
+            log.debug('found SourceMap header for', path)
+
+            if self.fetch_and_handle_srcmap(urljoin(path, header_map)):
+                return True
 
     def handle_content_sourcemaps(self, content, path, inline_only=False):
         had_sourcemap = False
@@ -733,7 +749,7 @@ class Crawler:
 
         if current_path in self.gf.public_path_map:
             public_path = self.gf.public_path_map[current_path]
-        
+
         else:
             public_path = ''
 
@@ -1258,6 +1274,7 @@ class GetFrontend:
         self.save_original_assets = config.get('save_original_assets')
         self.skip_css = config.get('skip_css')
         self.extract_nested_sourcemaps = config.get('extract_nested_sourcemaps')
+        self.no_header_sourcemaps = config.get('no_header_sourcemaps')
         self.client = Client(cookies=config.get('cookies'), headers=config.get('headers'))
 
         self.other_asset_extensions: set[str] = config.get('other_asset_extensions', set())
@@ -1495,6 +1512,7 @@ def get_config_from_args():
     scan_group.add_argument('-nn', '--no-nested-sourcemaps', action='store_true', help='Do not unpack inline sourcemaps found inside mapped content.')
     scan_group.add_argument('-so', '--save-original-assets', action='store_true', help='Save original asset files even if a source map exists.')
     scan_group.add_argument('-as', '--all-srcmap-urls', action='store_true', help='By default only one map specified by sourceMappingURL is fetched for a given script - this option overrides that. Use with caution, might generate many additional requests which are usually unsuccessful.')
+    scan_group.add_argument('-nh', '--no-header-sourcemaps', action='store_true', help='Do not detect source maps from SourceMap and X-SourceMap headers.')
 
     asset_group = parser.add_argument_group('asset options')
 
@@ -1517,6 +1535,7 @@ def get_config_from_args():
         'extract_nested_sourcemaps': not args.no_nested_sourcemaps,
         'save_original_assets': args.save_original_assets,
         'all_srcmap_urls': args.all_srcmap_urls,
+        'no_header_sourcemaps': args.no_header_sourcemaps,
         'skip_css': args.no_css,
         'other_asset_extensions': set([e for exts in args.asset_extensions for e in exts.split(',')]),
         'use_original_base': args.use_original_base,
